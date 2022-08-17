@@ -17,7 +17,7 @@ type RabbitClient struct {
 
 func NewRabbitClient(connectionUrl string) *RabbitClient {
 
-	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	conn, err := amqp.Dial(connectionUrl)
 	if err != nil {
 		return &RabbitClient{
 			Error: err,
@@ -32,54 +32,70 @@ func NewRabbitClient(connectionUrl string) *RabbitClient {
 
 func (mq *RabbitClient) Listen() {
 
-	redisClient := _redis.NewRedisClient(_const.RedisURL)
-
-	if redisClient.Error != nil {
-		fmt.Errorf(redisClient.Error.Error())
-	}
+	fmt.Println("Listening MQ")
 
 	ch, err := mq.Client.Channel()
 	if err != nil {
 		defer mq.Client.Close()
 		defer ch.Close()
-		fmt.Errorf(err.Error())
+		fmt.Println(err.Error())
 	}
 
+	q, errq := ch.QueueDeclare(
+		"NewMessage",
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+
+	if errq != nil {
+
+		fmt.Println(err.Error())
+	}
 	msgs, err := ch.Consume(
-		"NewMessage", // Bu sfer dinleyeceğim kuyruk ismini kendim yazdım
-		"",           // consumer
-		true,         // auto-ack
-		false,        // exclusive
-		false,        // no-local
-		false,        // no-wait
-		nil,          // args
+		q.Name,
+		"",
+		true,
+		false,
+		false,
+		false,
+		nil,
 	)
 	if err != nil {
-		fmt.Errorf(err.Error())
+		fmt.Println(err.Error())
 	}
 
 	forever := make(chan bool)
 
-	go func(redis *_redis.RedisClient) {
-		//Burada eğer varsa kuyruktaki mesajları çekiyoruz
+	go func() {
+		redisClient := _redis.NewRedisClient(_const.RedisURL)
+		if redisClient.Error != nil {
+			fmt.Println(redisClient.Error.Error())
+			return
+		}
 		for d := range msgs {
-			//d değişkeni ile kuyruktaki mesajın bilgilerine ulaşabiliriz.
-			var newmessage models.NewMessagePayload
-			err := json.Unmarshal(d.Body, newmessage)
 
+			var newmessage models.NewMessagePayload
+			err := json.Unmarshal(d.Body, &newmessage)
 			if err == nil {
-				redis.SetMessage(newmessage)
+				fmt.Println(newmessage.Message, newmessage.Sender, newmessage.Receiver)
+
+				redisClient.SetMessage(newmessage)
 			}
 
-			//Kuyruktaki mesaj ekrana bastırdık.
 		}
-	}(redisClient)
+		defer redisClient.Close()
+
+	}()
 
 	<-forever
 
 }
 
 func (mq *RabbitClient) SendMessage(publishData models.RabbitMessage) error {
+
 	// convert incomming Message to amqp.publis
 	message, e := json.Marshal(publishData.Message)
 	if e != nil {
@@ -89,14 +105,33 @@ func (mq *RabbitClient) SendMessage(publishData models.RabbitMessage) error {
 
 	ch, err := mq.Client.Channel()
 	if err != nil {
+		fmt.Println(err)
+
 		defer mq.Client.Close()
 		defer ch.Close()
 		return err
 	}
 
+	q, errQ := ch.QueueDeclare(
+		publishData.Quene,
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+
+	if errQ != nil {
+		fmt.Println(errQ)
+
+		defer mq.Client.Close()
+		defer ch.Close()
+		return errQ
+	}
+
 	errPublish := ch.Publish(
 		"",
-		publishData.Quene,
+		q.Name,
 		false,
 		false,
 		amqp.Publishing{
@@ -105,6 +140,7 @@ func (mq *RabbitClient) SendMessage(publishData models.RabbitMessage) error {
 		})
 
 	if errPublish != nil {
+		fmt.Println(errPublish)
 		defer mq.Client.Close()
 		defer ch.Close()
 		return errPublish

@@ -33,7 +33,7 @@ func SendMessage(c *gin.Context) {
 
 func GetMessage(c *gin.Context) {
 	var payload models.GetMessagePayload
-	if err := c.ShouldBindQuery(&payload); err != nil {
+	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

@@ -1,7 +1,5 @@
 version: '3.6'
-
 services:
-
   rabbitmq:
     image: rabbitmq:3.7-management
     container_name: rabbitmq
@@ -18,3 +16,16 @@ services:
     ports:
       - 6379:6379
     restart: always
+
+  portainer:
+    image: portainer/portainer-ce
+    restart: always
+    container_name: portainer
+    ports:
+      - "8000:8000"
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+volumes:
+  portainer_data:
